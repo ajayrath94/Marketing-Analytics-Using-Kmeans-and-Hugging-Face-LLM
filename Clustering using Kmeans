@@ -1,0 +1,290 @@
+%matplotlib inline
+import numpy as np
+import pandas as pd
+from datetime import datetime
+import matplotlib.pyplot as plt
+from pyod.models.ecod import ECOD
+
+# data visualization
+import matplotlib.cm as cm
+import plotly.express as px
+import plotly.graph_objects as go
+import seaborn as sns
+import shap
+
+# sklearn 
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import PowerTransformer, OrdinalEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score, silhouette_samples, accuracy_score, classification_report
+
+from pyod.models.ecod import ECOD
+from yellowbrick.cluster import KElbowVisualizer
+
+import lightgbm as lgb
+import prince
+
+
+df_embedding=pd.read_csv('embedding_train.csv', sep = ",")
+df_embedding
+
+
+df=pd.read_csv('Email_Level_Marketing_Analytics.csv')
+df.drop(df.columns[0], axis=1, inplace=True)
+df
+
+def get_pca_2d(df, predict):
+
+    pca_2d_object = prince.PCA(
+    n_components=2,
+    n_iter=3,
+    rescale_with_mean=True,
+    rescale_with_std=True,
+    copy=True,
+    check_input=True,
+    engine='sklearn',
+    random_state=42
+    )
+
+    pca_2d_object.fit(df)
+
+    df_pca_2d = pca_2d_object.transform(df)
+    df_pca_2d.columns = ["comp1", "comp2"]
+    df_pca_2d["cluster"] = predict
+
+    return pca_2d_object, df_pca_2d
+
+def get_pca_3d(df, predict):
+
+    pca_3d_object = prince.PCA(
+    n_components=3,
+    n_iter=3,
+    rescale_with_mean=True,
+    rescale_with_std=True,
+    copy=True,
+    check_input=True,
+    engine='sklearn',
+    random_state=42
+    )
+
+    pca_3d_object.fit(df)
+
+    df_pca_3d = pca_3d_object.transform(df)
+    df_pca_3d.columns = ["comp1", "comp2", "comp3"]
+    df_pca_3d["cluster"] = predict
+
+    return pca_3d_object, df_pca_3d
+
+def plot_pca_3d(df, title = "PCA Space", opacity=0.8, width_line = 0.1):
+
+    df = df.astype({"cluster": "object"})
+    df = df.sort_values("cluster")
+
+    fig = px.scatter_3d(df, 
+                        x='comp1', 
+                        y='comp2', 
+                        z='comp3',
+                        color='cluster',
+                        template="plotly",
+                        
+                        # symbol = "cluster",
+                        
+                        color_discrete_sequence=px.colors.qualitative.Vivid,
+                        title=title).update_traces(
+                            # mode = 'markers',
+                            marker={
+                                "size": 4,
+                                "opacity": opacity,
+                                # "symbol" : "diamond",
+                                "line": {
+                                    "width": width_line,
+                                    "color": "black",
+                                }
+                            }
+                        ).update_layout(
+                                width = 1000, 
+                                height = 800, 
+                                autosize = False, 
+                                showlegend = True,
+                                legend=dict(title_font_family="Times New Roman",
+                                            font=dict(size= 20)),
+                                scene = dict(xaxis=dict(title = 'comp1', titlefont_color = 'black'),
+                                            yaxis=dict(title = 'comp2', titlefont_color = 'black'),
+                                            zaxis=dict(title = 'comp3', titlefont_color = 'black')),
+                                font = dict(family = "Gilroy", color  = 'black', size = 15))
+                      
+    
+    fig.show()
+
+def plot_pca_2d(df, title = "PCA Space", opacity=0.8, width_line = 0.1):
+
+    df = df.astype({"cluster": "object"})
+    df = df.sort_values("cluster")
+
+    fig = px.scatter(df, 
+                        x='comp1', 
+                        y='comp2', 
+                        color='cluster',
+                        template="plotly",
+                        # symbol = "cluster",
+                        
+                        color_discrete_sequence=px.colors.qualitative.Vivid,
+                        title=title).update_traces(
+                            # mode = 'markers',
+                            marker={
+                                "size": 8,
+                                "opacity": opacity,
+                                # "symbol" : "diamond",
+                                "line": {
+                                    "width": width_line,
+                                    "color": "black",
+                                }
+                            }
+                        ).update_layout(
+                                width = 800, 
+                                height = 700, 
+                                autosize = False, 
+                                showlegend = True,
+                                legend=dict(title_font_family="Times New Roman",
+                                            font=dict(size= 20)),
+                                scene = dict(xaxis=dict(title = 'comp1', titlefont_color = 'black'),
+                                            yaxis=dict(title = 'comp2', titlefont_color = 'black'),
+                                            ),
+                                font = dict(family = "Gilroy", color  = 'black', size = 15))
+                        
+        
+    fig.show()
+
+
+clf = ECOD()
+clf.fit(df_embedding)
+
+
+out = clf.predict(df_embedding) 
+df_embedding["outliers"] = out
+df["outliers"] = out
+
+df_embedding_no_out = df_embedding[df_embedding["outliers"] == 0]
+df_embedding_no_out = df_embedding_no_out.drop(["outliers"], axis = 1)
+
+
+df_embedding_with_out = df_embedding.copy()
+df_embedding_with_out = df_embedding_with_out.drop(["outliers"], axis = 1)
+
+
+df_embedding_no_out.shape
+df_embedding_with_out.shape
+
+# Instantiate the clustering model and visualizer
+km = KMeans(init="k-means++", random_state=0, n_init="auto")
+visualizer = KElbowVisualizer(km, k=(2,10), locate_elbow=True)
+ 
+visualizer.fit(df_embedding_no_out)        # Fit the data to the visualizer
+visualizer.show()  
+
+# Instantiate the clustering model and visualizer
+km = KMeans(init="k-means++", random_state=0, n_init="auto")
+visualizer = KElbowVisualizer(km, k=(2,10), locate_elbow=True)
+ 
+visualizer.fit(df_embedding_with_out)        # Fit the data to the visualizer
+visualizer.show()  
+
+n_clusters = 4
+
+clusters = KMeans(n_clusters=n_clusters, init = "k-means++").fit(df_embedding_no_out)
+print(clusters.inertia_)
+clusters_predict = clusters.predict(df_embedding_no_out)
+cluster_labels = clusters.labels_
+df_embedding_no_out['Cluster_Labels'] = cluster_labels
+
+clusters = KMeans(n_clusters=n_clusters, init = "k-means++").fit(df_embedding_no_out)
+print(clusters.inertia_)
+clusters_predict = clusters.predict(df_embedding_no_out)
+cluster_labels = clusters.labels_
+df_embedding_no_out['Cluster_Labels'] = cluster_labels
+
+result_no_out=df_no_out.join(df_embedding_no_out['Cluster_Labels'], how='left')
+result_no_out
+
+result_with_out=df.join(df_embedding_with_out['Cluster_Labels'], how='left')
+result_with_out
+
+result_no_out.to_csv('Kmeans_no_outlier_data_using_LLM.csv')
+result_with_out.to_csv('Kmeans_all_data_using_LLM.csv')
+
+from sklearn.metrics import silhouette_score
+from sklearn.metrics import calinski_harabasz_score
+from sklearn.metrics import davies_bouldin_score
+
+"""
+The Davies Bouldin index is defined as the average similarity measure of each cluster with its most similar cluster, where similarity is the ratio of within-cluster distances to between-cluster distances.
+The minimum value of the DB Index is 0, whereas a smaller value (closer to 0) represents a better model that produces better clusters.
+"""
+print(f"Davies bouldin score: {davies_bouldin_score(df_embedding_no_out,clusters_predict)}")
+
+"""
+Calinski Harabaz Index -> Variance Ratio Criterion.
+Calinski Harabaz Index is defined as the ratio of the sum of between-cluster dispersion and of within-cluster dispersion.
+The higher the index the more separable the clusters.
+"""
+print(f"Calinski Score: {calinski_harabasz_score(df_embedding_no_out,clusters_predict)}")
+
+
+"""
+The silhouette score is a metric used to calculate the goodness of fit of a clustering algorithm, but can also be used as a method for determining an optimal value of k (see here for more).
+Its value ranges from -1 to 1.
+A value of 0 indicates clusters are overlapping and either the data or the value of k is incorrect.
+1 is the ideal value and indicates that clusters are very dense and nicely separated.
+"""
+print(f"Silhouette Score: {silhouette_score(df_embedding_no_out,clusters_predict)}")
+
+
+from sklearn.metrics import silhouette_score
+from sklearn.metrics import calinski_harabasz_score
+from sklearn.metrics import davies_bouldin_score
+
+"""
+The Davies Bouldin index is defined as the average similarity measure of each cluster with its most similar cluster, where similarity is the ratio of within-cluster distances to between-cluster distances.
+The minimum value of the DB Index is 0, whereas a smaller value (closer to 0) represents a better model that produces better clusters.
+"""
+print(f"Davies bouldin score: {davies_bouldin_score(df_embedding_with_out,clusters_predict1)}")
+
+"""
+Calinski Harabaz Index -> Variance Ratio Criterion.
+Calinski Harabaz Index is defined as the ratio of the sum of between-cluster dispersion and of within-cluster dispersion.
+The higher the index the more separable the clusters.
+"""
+print(f"Calinski Score: {calinski_harabasz_score(df_embedding_with_out,clusters_predict1)}")
+
+
+"""
+The silhouette score is a metric used to calculate the goodness of fit of a clustering algorithm, but can also be used as a method for determining an optimal value of k (see here for more).
+Its value ranges from -1 to 1.
+A value of 0 indicates clusters are overlapping and either the data or the value of k is incorrect.
+1 is the ideal value and indicates that clusters are very dense and nicely separated.
+"""
+print(f"Silhouette Score: {silhouette_score(df_embedding_with_out,clusters_predict1)}")
+
+
+
+pca_3d_object, df_pca_3d = get_pca_3d(df_embedding_with_out, clusters_predict1)
+plot_pca_3d(df_pca_3d, title = "PCA Space", opacity=1, width_line = 0.1)
+print("The variability is :", pca_3d_object.eigenvalues_summary)
+
+
+pca_3d_object, df_pca_3d = get_pca_3d(df_embedding_no_out, clusters_predict)
+plot_pca_3d(df_pca_3d, title = "PCA Space", opacity=1, width_line = 0.1)
+print("The variability is :", pca_3d_object.eigenvalues_summary)
+
+
+pca_2d_object, df_pca_2d = get_pca_2d(df_embedding_with_out, clusters_predict1)
+plot_pca_2d(df_pca_2d, title = "PCA Space", opacity=1, width_line = 0.2)
+
+pca_2d_object, df_pca_2d = get_pca_2d(df_embedding_no_out, clusters_predict)
+plot_pca_2d(df_pca_2d, title = "PCA Space", opacity=1, width_line = 0.2)
+
+import joblib
+joblib.dump(clusters, 'kmeans_model_with_LLM_Without_Outliers.pkl')
+
+joblib.dump(clusters1, 'kmeans_model_with_LLM_With_all_data.pkl')
